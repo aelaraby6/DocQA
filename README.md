@@ -7,34 +7,66 @@ The application allows users to upload any book or story PDF, index its content,
 
 ## System Flow
 
-The diagram below illustrates the two main processes of the DocQA architecture: **1) Ingestion & Vector Indexing**, and **2) Retrieval-Augmented Generation (RAG) & Chat Inference**.
-
 ```mermaid
-flowchart TD
-    %% Styling
-    classDef process fill:#e1f5fe,stroke:#0288d1,stroke-width:2px;
-    classDef storage fill:#efebe9,stroke:#5d4037,stroke-width:2px;
-    classDef api fill:#e8f5e9,stroke:#388e3c,stroke-width:2px;
-    classDef client fill:#fff8e1,stroke:#f57c00,stroke-width:2px;
-
-    %% Ingestion Flow
-    subgraph Ingestion_Pipeline ["Phase 1: Ingestion & Vector Indexing"]
-        A[PDF File: uploaded or default]:::client --> B(Extract Text via PyPDF):::process
-        B --> C(Chunk Text: 800 chars, 100 overlap):::process
-        C --> D(Generate Embeddings via SentenceTransformer):::process
-        D --> E[(FAISS IndexFlatL2)]:::storage
-    end
-
-    %% Inference Flow
-    subgraph RAG_Inference ["Phase 2: RAG & Chat Inference"]
-        F[User Question & Character Name]:::client --> G(Generate Query Embedding):::process
-        G --> H(Semantic Search in FAISS Index):::process
-        E -->|Retrieve Top k=4 Chunks| H
-        H --> I(Retrieve Context Chunks):::process
-        I --> J(Build System Prompt: Embody Persona + Inject Context):::process
-        J --> K(Groq API Client):::api
-        K -->|Llama-3.3-70b-versatile| L(Character-stylized Answer):::client
-    end
+flowchart LR
+subgraph group_api["FastAPI Service"]
+  node_main["FastAPI App<br/>API orchestration<br/>[main.py]"]
+  node_sample_pdf["Bundled Sample PDF<br/>default document"]
+  node_upload_pdf["Uploaded PDF<br/>multipart input"]
+end
+subgraph group_ingestion["Indexing Pipeline"]
+  node_pdf_utils["PDF Extractor &amp; Chunker<br/>ingestion<br/>[pdf_utils.py]"]
+end
+subgraph group_retrieval["Retrieval State"]
+  node_encoder{{"Sentence-Transformers Encoder<br/>local embeddings<br/>[vector_store.py]"}}
+  node_vector_store[("FAISS Vector Store<br/>in-memory similarity index<br/>[vector_store.py]")]
+  node_chunk_text["Chunk Text Store<br/>in-memory context<br/>[vector_store.py]"]
+end
+subgraph group_generation["Grounded Generation"]
+  node_persona["Persona Prompt Builder<br/>prompt orchestration<br/>[persona.py]"]
+  node_groq{{"Groq Completion API<br/>remote LLM"}}
+  node_groq_key["GROQ_API_KEY<br/>runtime secret<br/>[.env.example]"]
+end
+node_client(("API Client"))
+node_requirements["Python Dependencies<br/>deployment manifest<br/>[requirements.txt]"]
+node_client -->|"POST /upload or /chat"| node_main
+node_sample_pdf -->|"startup default"| node_main
+node_main -->|"stores multipart PDF"| node_upload_pdf
+node_main -->|"indexes default or upload"| node_pdf_utils
+node_pdf_utils -->|"text chunks"| node_encoder
+node_encoder -->|"chunk embeddings"| node_vector_store
+node_pdf_utils -->|"source chunks"| node_chunk_text
+node_main -->|"chat question embedding"| node_encoder
+node_encoder -->|"query vector"| node_vector_store
+node_vector_store -->|"top-4 vector matches"| node_chunk_text
+node_main -->|"character, question, passages"| node_persona
+node_chunk_text -->|"retrieved context"| node_persona
+node_persona -->|"grounded completion request"| node_groq
+node_groq_key -.->|"authentication"| node_groq
+node_groq -->|"answer or failure"| node_main
+node_main -->|"JSON response"| node_client
+node_requirements -.->|"runtime dependencies"| node_main
+click node_main "https://github.com/aelaraby6/docqa/blob/main/src/main.py"
+click node_sample_pdf "https://github.com/aelaraby6/docqa/blob/main/data/the_lighthouse_keepers_secret.pdf"
+click node_pdf_utils "https://github.com/aelaraby6/docqa/blob/main/src/utils/pdf_utils.py"
+click node_encoder "https://github.com/aelaraby6/docqa/blob/main/src/vector_store.py"
+click node_vector_store "https://github.com/aelaraby6/docqa/blob/main/src/vector_store.py"
+click node_chunk_text "https://github.com/aelaraby6/docqa/blob/main/src/vector_store.py"
+click node_persona "https://github.com/aelaraby6/docqa/blob/main/src/persona.py"
+click node_groq_key "https://github.com/aelaraby6/docqa/blob/main/.env.example"
+click node_requirements "https://github.com/aelaraby6/docqa/blob/main/requirements.txt"
+classDef toneNeutral fill:#f8fafc,stroke:#334155,stroke-width:1.5px,color:#0f172a
+classDef toneBlue fill:#dbeafe,stroke:#2563eb,stroke-width:1.5px,color:#172554
+classDef toneAmber fill:#fef3c7,stroke:#d97706,stroke-width:1.5px,color:#78350f
+classDef toneMint fill:#dcfce7,stroke:#16a34a,stroke-width:1.5px,color:#14532d
+classDef toneRose fill:#ffe4e6,stroke:#e11d48,stroke-width:1.5px,color:#881337
+classDef toneIndigo fill:#e0e7ff,stroke:#4f46e5,stroke-width:1.5px,color:#312e81
+classDef toneTeal fill:#ccfbf1,stroke:#0f766e,stroke-width:1.5px,color:#134e4a
+class node_main,node_sample_pdf,node_upload_pdf toneBlue
+class node_pdf_utils toneAmber
+class node_encoder,node_vector_store,node_chunk_text toneMint
+class node_persona,node_groq,node_groq_key toneRose
+class node_client,node_requirements toneNeutral
 ```
 
 ### Detailed Pipeline Breakdown
