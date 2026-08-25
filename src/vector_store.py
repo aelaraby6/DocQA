@@ -8,9 +8,11 @@ class BookIndex:
     def __init__(self):
         self.index = None
         self.chunks: list[str] = []
+        self.filename: str = "None"
 
-    def build(self, chunks: list[str]):
+    def build(self, chunks: list[str], filename: str = ""):
         self.chunks = chunks
+        self.filename = filename
         embeddings = model.encode(chunks, convert_to_numpy=True)
         dim = embeddings.shape[1]
         self.index = faiss.IndexFlatL2(dim)
