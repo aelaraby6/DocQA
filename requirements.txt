@@ -7,3 +7,5 @@ sentence-transformers==5.7.0
 groq==1.6.0
 python-dotenv==1.2.2
 python-multipart==0.0.32
+streamlit==1.42.0
+requests==2.32.3

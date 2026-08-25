@@ -3,7 +3,7 @@ import shutil
 from fastapi import FastAPI, UploadFile, File, Form
 from src.utils.pdf_utils import extract_text, chunk_text
 from src.vector_store import book_index
-from src.persona import ask_character
+from src.qa_service import ask_document
 
 app = FastAPI(title="DocQA")
 
@@ -14,7 +14,8 @@ UPLOAD_DIR = "uploads"
 def load_pdf_into_index(path: str) -> int:
     text = extract_text(path)
     chunks = chunk_text(text)
-    book_index.build(chunks)
+    filename = os.path.basename(path)
+    book_index.build(chunks, filename=filename)
     return len(chunks)
 
 
@@ -42,11 +43,26 @@ async def upload_book(file: UploadFile = File(...)):
     return {"status": "ok", "chunks_indexed": count}
 
 
+@app.get("/status")
+async def get_status():
+    if not book_index.chunks:
+        return {
+            "status": "empty",
+            "filename": None,
+            "chunks_indexed": 0
+        }
+    return {
+        "status": "ready",
+        "filename": book_index.filename,
+        "chunks_indexed": len(book_index.chunks)
+    }
+
+
 @app.post("/chat")
-async def chat(character_name: str = Form(...), question: str = Form(...)):
+async def chat(question: str = Form(...)):
     if not book_index.chunks:
         return {"error": "No book is indexed yet. Call /upload first."}
 
     relevant_chunks = book_index.search(question, k=4)
-    answer = ask_character(character_name, question, relevant_chunks)
-    return {"character": character_name, "answer": answer}
+    answer = ask_document(question, relevant_chunks)
+    return {"answer": answer}
